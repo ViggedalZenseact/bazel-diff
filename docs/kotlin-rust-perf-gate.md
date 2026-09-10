@@ -82,22 +82,23 @@ An allocator with per-thread arenas (glibc's default) absorbs this and the Rust 
 several times faster than Kotlin. An allocator with a single global lock serializes every
 worker on that lock; system time explodes and throughput scales *negatively* with core
 count. The published Rust release is a **static musl** binary, and musl's malloc uses a
-single arena -- so on a many-core host this workload can make the release binary as slow as,
-or slower than, Kotlin, while a glibc build of the same source passes comfortably.
+single arena -- so on a many-core host this workload would make the release binary as slow
+as, or slower than, Kotlin, while a glibc build of the same source passed comfortably. The
+release therefore links **mimalloc** as its `#[global_allocator]` (see `src/main.rs`), whose
+per-thread heaps restore scaling; this workload exists to keep it that way.
 
-To observe it, point `--rust-binary` at the static-musl release on a many-core machine, or
-approximate it with a glibc build under `MALLOC_ARENA_MAX=1`. The smaller graphs do not
-reach a high enough concurrent allocation rate to surface this, which is why the dense graph
-exists as a separate load. A scalable global allocator (for example jemalloc or mimalloc via
-`#[global_allocator]`) removes the gap.
+To reproduce the underlying problem, drop the `#[global_allocator]` and point `--rust-binary`
+at the static-musl release on a many-core machine, or approximate it with a glibc build under
+`MALLOC_ARENA_MAX=1`. The smaller graphs do not reach a high enough concurrent allocation
+rate to surface it, which is why the dense graph exists as a separate load.
 
 The default CI run builds the host **glibc** binary, which is stable on any runner and never
-storms -- so it would not catch this by itself. The gate therefore runs as two legs (see
-`.github/workflows/perf-gate.yaml`): the glibc leg is the blocking "Rust is faster" gate,
-and a second leg builds the published `--config=release-musl` binary and runs the dense load
-against it. That leg needs a **many-core runner** -- the storm does not appear below ~8 cores,
-so a 2-vCPU runner would pass it regardless -- and is non-blocking until a scalable global
-allocator lands. Locally, `make perf-gate-musl` reproduces it on a many-core host.
+storms -- so it would not catch an allocator regression by itself. The gate therefore runs as
+two legs (see `.github/workflows/perf-gate.yaml`): the glibc leg is the blocking "Rust is
+faster" gate, and a second leg builds the published `--config=release-musl` binary and runs
+the dense load against it. That leg needs a **many-core runner** -- the storm does not appear
+below ~8 cores, so a 2-vCPU runner would pass it regardless of the allocator. Locally,
+`make perf-gate-musl` reproduces it on a many-core host.
 
 ## Protocol
 

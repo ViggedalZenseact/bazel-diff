@@ -17,10 +17,10 @@ name: Performance Gate
 #   * glibc -- the host-native dynamic build. Stable on any runner, so it is the blocking gate
 #     that proves the Rust logic is faster than Kotlin.
 #   * musl  -- the statically-linked binary actually published for Linux. musl's single-arena
-#     malloc serializes the parallel proto decode, so this leg guards allocator scalability. It
+#     malloc would serialize the parallel proto decode, so this leg guards allocator scalability:
+#     the release links mimalloc as its #[global_allocator], and this leg keeps it that way. It
 #     only reproduces with enough cores (>= 8; the free 2-vCPU runner cannot surface it), so it
-#     runs on a larger runner, over the allocator-sensitive workload, and is non-blocking until a
-#     scalable global allocator lands.
+#     runs on a larger runner over the allocator-sensitive workload.
 # See docs/kotlin-rust-perf-gate.md for the protocol and for what to do when this job fails.
 on:
   push:
@@ -33,8 +33,6 @@ jobs:
   perf-gate:
     name: ${{ matrix.title }}
     runs-on: ${{ matrix.runner }}
-    # The musl leg is informational until a scalable #[global_allocator] (jemalloc/mimalloc)
-    # lands; flip its continue_on_error to false in that same change.
     continue-on-error: ${{ matrix.continue_on_error }}
     timeout-minutes: 45
     strategy:
@@ -58,7 +56,7 @@ jobs:
             rust_build: --config=release-musl //release:bazel-diff-rust
             rust_binary: bazel-bin/release/bazel-diff-rust-linux-amd64
             gate_workloads: --workload generate-hashes-dense
-            continue_on_error: true
+            continue_on_error: false
     steps:
       # No host Rust toolchain: the Rust binary is built by Bazel, which brings
       # its own rustc pinned in MODULE.bazel.
